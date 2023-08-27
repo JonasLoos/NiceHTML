@@ -1,8 +1,10 @@
+use js_sys::Error;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{window, console, Element};
 use std::collections::HashMap;
 use regex::Regex;
+use std::panic;
 
 
 #[wasm_bindgen]
@@ -41,8 +43,16 @@ fn is_valid_identifier(s: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+fn err(msg: &str, line: &str) -> Result<(), JsValue> {
+    return Err(format!("NiceHTML Error: {}\n  for line: `{}`", msg, line).into())
+}
+
 #[wasm_bindgen]
 pub fn render(script: &str) -> Result<(), JsValue> {
+    // setup error logging
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+
+    // initialize variables
     let window = window().expect("no global `window` exists");
     let document = window.document().expect("should have a document on window");
     let body = document.body().unwrap();
@@ -60,9 +70,9 @@ pub fn render(script: &str) -> Result<(), JsValue> {
         // Parse line for element, id, class, etc.
         // For simplicity, let's assume it's just the tag name
         
-        let indent = line.chars().take_while(|&c| c == ' ').count() / 4;
+        let indent = line.chars().take_while(|&c| c == ' ').count() / 4 + 1;
         if indent > current_indent + 1 {
-            return Err("Indentation error: too much indentation at once".into());
+            return err("too much indentation at once", line);
         }
         while indent <= current_indent {
             let (previous_top, var_name) = parent_stack.pop().unwrap();
@@ -85,14 +95,14 @@ pub fn render(script: &str) -> Result<(), JsValue> {
             } else if definition.contains("(") && definition.contains(")") {
                 name = definition.split("(").next().unwrap();
                 if !is_valid_identifier(name) {
-                    return Err("Syntax error: not a valid variable or function definition".into());
+                    return err("not a valid variable or function definition", line);
                 }
                 if !definition.split("(").nth(1).unwrap().split(")").nth(1).unwrap().trim().is_empty() {
-                    return Err("Syntax error: not a valid variable or function definition".into());
+                    return err("not a valid variable or function definition", line);
                 }
                 args = definition.split("(").nth(1).unwrap().split(")").next().unwrap().split(",").collect();
             } else {
-                return Err("Syntax error: not a valid variable or function definition".into());
+                return err("not a valid variable or function definition", line);
             }
             let mut arg_places: Vec<(&str,Vec<Element>)> = vec![];
             for arg_name in args {
@@ -137,14 +147,14 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                 // make sure there are no references to variables that are still being defined:
                 for (_, x) in parent_stack.as_slice() {
                     if *x == name {
-                        return Err("Syntax error: variable is still being defined".into());
+                        return err("variable is still being defined", line);
                     }
                 }
                 let (var, arg_places) = variables.get(name).unwrap();
                 // function call
                 if arg_places.len() > 0 {
                     if raw_line.split("(").count() != 2 {
-                        return Err("Syntax Error: invalid function call".into());
+                        return err("invalid function call", line);
                     }
                     // get given args
                     let given_args_raw : Vec<&str> = raw_line.split("(").nth(1).unwrap().split(")").next().unwrap().split(",").collect();
@@ -161,12 +171,12 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                             // insert variable element
                             let (arg_var, arg_var_arg_places) = variables.get(name).unwrap();
                             if !arg_var_arg_places.is_empty() {
-                                return Err("Syntax Error: Function calls inside other function calls are not allowed".into());
+                                return err("Function calls inside other function calls are not allowed", line);
                             }
                             let cloned_given_arg = arg_var.clone_node_with_deep(true).unwrap().dyn_into::<web_sys::Element>().unwrap();
                             given_args.push(cloned_given_arg);
                         } else {
-                            return Err("Syntax Error: unknown argument type".into());
+                            return err("unknown argument type", line);
                         }
                     }
                     // insert args into place
@@ -192,12 +202,12 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                 }
                 current_indent += 1;
             } else {
-                return Err("Error: variable not defined".into());
+                return err("Variable not defined", line);
             }
 
         // error
         } else {
-            return Err("Syntax error: not sure that this line is".into());
+            return err("Not sure that this line is", line);
         }
     }
     
