@@ -195,10 +195,16 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                         return err("invalid function call", line_nr, line);
                     }
                     // get given args
-                    let given_args_raw : Vec<&str> = raw_line.split("(").nth(1).unwrap().split(")").next().unwrap().split(",").collect();
+                    let given_args_raw = raw_line.split("(").nth(1).unwrap().split(")").next().unwrap();
+                    let re_full = Regex::new(r#"((".*?"|\$[a-zA-Z_][a-zA-Z_0-9]*),\s*)*(".*?"|\$[a-zA-Z_][a-zA-Z_0-9]*)?,?"#).unwrap();
+                    if !re_full.is_match(given_args_raw) {
+                        return err("invalid function call", line_nr, line);
+                    }
+                    let re = Regex::new(r#"".*?"|\$[a-zA-Z_][a-zA-Z_0-9]*"#).unwrap();
                     let mut given_args: Vec<Element> = vec![];
-                    for arg_raw in given_args_raw {
-                        let arg = arg_raw.trim();
+                    for arg_cap in re.captures_iter(given_args_raw) {
+                        // let arg = arg_raw.trim();
+                        let arg = &arg_cap[0];
                         // string
                         if arg.starts_with("\"") && arg.ends_with("\"") {
                             // create span element with string inside
