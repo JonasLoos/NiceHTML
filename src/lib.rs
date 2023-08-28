@@ -75,7 +75,7 @@ pub fn render(script: &str) -> Result<(), JsValue> {
         }
         while indent <= current_indent {
             let (finished_element, var_name) = parent_stack.pop().unwrap();
-            // console::log_1(&format!("finished element {}", finished_element.outer_html()).into());
+            // console::log_1(&format!("finished element {}", finished_element.outer_html()).into());  // for debugging
             current_indent -= 1;
             if var_name.is_empty() {
                 // append normal elements to their parent. Don't do this for variables/functions (for which `var_name` is set)
@@ -134,7 +134,7 @@ pub fn render(script: &str) -> Result<(), JsValue> {
             current_indent += 1;
 
         // normal tag
-        } else if is_valid_identifier(raw_line.split_whitespace().next().unwrap()) {
+        } else if Regex::new(r#"^[a-zA-Z_]\w*(\s+\w+="[^"]*")*$"#).unwrap().is_match(raw_line) {
             let tag_name = raw_line.split_whitespace().next().unwrap();
             
             // Create element
