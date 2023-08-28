@@ -1,4 +1,3 @@
-use js_sys::Error;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{window, console, Element};
@@ -143,14 +142,32 @@ pub fn render(script: &str) -> Result<(), JsValue> {
         // variable
         } else if raw_line.starts_with("$") && is_valid_identifier(&raw_line.split("(").next().unwrap()[1..]) {
             let name = &raw_line.split("(").next().unwrap()[1..];
-            if variables.contains_key(name) {
+
+            // if this is inside a function definition and an argument is accessed, create an empty div as placeholder
+            let mut is_arg = false;
+            for (_, parent_name) in parent_stack.iter().rev() {
+                if let Some((_, parent_arg_places)) = variables.get_mut(parent_name) {
+                    // if parent is a function
+                    if !parent_arg_places.is_empty() {
+                        // add a placeholder for the argument
+                        let placeholder = document.create_element("div")?;
+                        parent_arg_places[0].1.push(placeholder);
+                        is_arg = true;
+                        break;
+                    }
+                }
+            }
+
+            if is_arg {
+                // already handled above
+            } else if variables.contains_key(name) {
                 // make sure there are no references to variables that are still being defined:
                 for (_, x) in parent_stack.as_slice() {
                     if *x == name {
                         return err("variable is still being defined", line);
                     }
                 }
-                let (var, arg_places) = variables.get(name).unwrap();
+                let (_, arg_places) = variables.get(name).unwrap();
                 // function call
                 if arg_places.len() > 0 {
                     if raw_line.split("(").count() != 2 {
@@ -165,11 +182,11 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                         if arg.starts_with("\"") && arg.ends_with("\"") {
                             // create span element with string inside
                             let element = document.create_element("span")?;
-                            element.set_inner_html(&raw_line[1..raw_line.len()-1]);
+                            element.set_inner_html(&arg[1..arg.len()-1]);
                             given_args.push(element);
                         } else if arg.starts_with("$") {
                             // insert variable element
-                            let (arg_var, arg_var_arg_places) = variables.get(name).unwrap();
+                            let (arg_var, arg_var_arg_places) = variables.get(name).unwrap();  // TODO: not only check variables, but also function arguments
                             if !arg_var_arg_places.is_empty() {
                                 return err("Function calls inside other function calls are not allowed", line);
                             }
@@ -182,23 +199,26 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                     // insert args into place
                     for ((_, arg_place), given_arg) in arg_places.iter().zip(given_args.iter()) {
                         for place in arg_place {
-                            let _ = place.append_child(given_arg);
+                            let _ = place.append_child(&given_arg.clone_node().unwrap());
                         }
                     }
+                    
                     // create a copy of the prepared function body
-                    let new_element = var.clone_node_with_deep(true).unwrap().dyn_into::<web_sys::Element>().unwrap();
                     // undo inserting args, so the function is ready for the next time
                     for (_, arg_place) in arg_places {
                         for place in arg_place {
                             let _ = place.remove_child(&place.last_child().unwrap());
                         }
                     }
+                    let new_element = variables.get(name).unwrap().0.clone_node_with_deep(true).unwrap().dyn_into::<web_sys::Element>().unwrap();
                     // add new prepared and cloned function element to the stack
                     parent_stack.push((new_element, ""));
                 // variable access
                 } else {
-                    let new_element = var.clone_node_with_deep(true).unwrap().dyn_into::<web_sys::Element>().unwrap();
-                    parent_stack.push((new_element, ""));
+                    if !is_arg {
+                        let new_element = variables.get(name).unwrap().0.clone_node_with_deep(true).unwrap().dyn_into::<web_sys::Element>().unwrap();
+                        parent_stack.push((new_element, ""));
+                    }
                 }
                 current_indent += 1;
             } else {
@@ -208,6 +228,15 @@ pub fn render(script: &str) -> Result<(), JsValue> {
         // error
         } else {
             return err("Not sure that this line is", line);
+        }
+    }
+    // pop all remaining elements (except body) from the stack
+    while current_indent > 0 {
+        let (previous_top, var_name) = parent_stack.pop().unwrap();
+        current_indent -= 1;
+        if var_name.is_empty() {
+            // append normal elements to their parent. Don't do this for variables/functions
+            parent_stack.last().unwrap().0.append_child(&previous_top)?;
         }
     }
     
