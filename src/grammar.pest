@@ -1,21 +1,14 @@
 WHITESPACE = _{ " " | "\t" | "\n" }
-
 comment = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
 
-identifier = @{ ('a'..'z' | 'A'..'Z' | '0'..'9' | '-' | '_')+ }
-
+identifier = @{ ('a'..'z' | 'A'..'Z' | '_') ~ ASCII_ALPHANUMERIC* }
 string = ${ "\"" ~ (!( "\"" ) ~ ANY)* ~ "\"" }
-
 number = ${ ('0'..'9')+ }
 
 attribute = { identifier ~ "=\"" ~ string ~ "\"" }
-
 element = { (identifier ~ attribute* ~ "\n" ~ content?) | content }
-
 content = { (element | function | comment | string | identifier | "$" ~ identifier ~ ("(" ~ parameter ~ ")")?)* }
-
 parameter = { identifier | string | function }
-
 function = { identifier ~ "(" ~ parameter* ~ ")" ~ "=" ~ "\n" ~ content* }
 
 document = { SOI ~ (comment | element | function)* ~ EOI }

@@ -1,13 +1,13 @@
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 use pest::Parser;
+use pest_derive::Parser;
 use web_sys::{window, console, Element};
+use std::panic;
 
-#[macro_use]
-extern crate pest_derive;
+
 #[derive(Parser)]
-#[grammar = "my_grammar.pest"]
-pub struct MyParser;
+#[grammar = "src/grammar.pest"]
+struct MyParser;
 
 #[wasm_bindgen]
 pub fn transpile(input: &str) -> Result<(), JsValue> {
