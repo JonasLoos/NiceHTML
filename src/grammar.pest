@@ -1,14 +1,25 @@
-WHITESPACE = _{ " " | "\t" | "\n" }
-comment = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
+comment = _{ "#" ~ ANY* }
 
-identifier = @{ ('a'..'z' | 'A'..'Z' | '_') ~ ASCII_ALPHANUMERIC* }
-string = ${ "\"" ~ (!( "\"" ) ~ ANY)* ~ "\"" }
-number = ${ ('0'..'9')+ }
+identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ ASCII_ALPHANUMERIC* }
+string = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-attribute = { identifier ~ "=\"" ~ string ~ "\"" }
-element = { (identifier ~ attribute* ~ "\n" ~ content?) | content }
-content = { (element | function | comment | string | identifier | "$" ~ identifier ~ ("(" ~ parameter ~ ")")?)* }
-parameter = { identifier | string | function }
-function = { identifier ~ "(" ~ parameter* ~ ")" ~ "=" ~ "\n" ~ content* }
+attribute = { identifier ~ ("=" ~ string)? }
+element_name = { identifier ~ (" "+ ~ attribute*)?}
+element = { element_name ~ " "* ~ ("\n" ~ children)? }
 
-document = { SOI ~ (comment | element | function)* ~ EOI }
+definition = { identifier ~ ("(" ~ identifier ~ ("," ~ identifier)* ~ ")")? ~ " "* ~ "=" ~ " "* ~ "\n" ~ children }
+
+string_line = { string }
+
+parameter = { string | variable }
+variable = { "$" ~ identifier ~ ("(" ~ " "* ~ parameter ~ (" "* ~ "," ~ " "* ~ parameter)* ~ " "* ~ ")")? }
+
+content = _{ definition | element | variable | string_line | comment | (" " | "\t")* }
+first_line = _{ content }
+later_line = _{  PEEK_ALL ~ content }
+lines = _{ first_line ~ ("\n" ~ later_line)* }
+
+indentation = _{ (" " | "\t")+ }
+children = { PEEK_ALL ~ PUSH(indentation) ~ lines ~ DROP }
+
+root = _{ lines ~ EOI }

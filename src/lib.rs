@@ -1,9 +1,25 @@
+use pest::iterators::Pair;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{window, console, Element};
 use std::collections::HashMap;
 use regex::Regex;
 use std::panic;
+use pest::Parser;
+use pest_derive::Parser;
+
+
+macro_rules! log {
+    ($($arg:tt)*) => {{
+        console::log_1(&format!($($arg)*).into());
+    }};
+}
+
+macro_rules! err {
+    ($($arg:tt)*) => {{
+        Err(format!($($arg)*))
+    }};
+}
 
 
 #[wasm_bindgen]
@@ -268,4 +284,216 @@ pub fn render(script: &str) -> Result<(), JsValue> {
     }
     
     Ok(())
+}
+
+
+
+struct VariableHashMapStack<K, V> {
+    stack: Vec<HashMap<K, V>>,
+}
+
+impl<K, V> VariableHashMapStack<K, V>
+where
+    K: std::cmp::Eq + std::hash::Hash + Clone,
+    V: Clone,
+{
+    fn new() -> Self {
+        VariableHashMapStack { stack: vec![HashMap::new()] }
+    }
+
+    fn push(&mut self) {
+        self.stack.push(HashMap::new());
+    }
+
+    fn pop(&mut self) {
+        if self.stack.len() > 1 {
+            self.stack.pop();
+        }
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if let Some(top) = self.stack.last_mut() {
+            top.insert(key, value);
+        }
+    }
+
+    fn get(&self, key: &K) -> Option<V> {
+        for map in self.stack.iter().rev() {
+            if let Some(value) = map.get(key) {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+}
+
+// variable_name: (argument_names, definition?, element?)
+// definition: Pairs are good to easily insert normal variables during the processing of the function body
+// element: Elements are good to handle nested function calls, where pairs would cause arugment function calls to use the inner variable scope instead of the outer one
+type VarStack<'a> = VariableHashMapStack<&'a str, (Vec<&'a str>, Option<Pair<'a, Rule>>, Option<Element>)>;
+
+
+#[derive(Parser)]
+#[grammar = "src/grammar.pest"]
+struct NiceHTMLParser;
+
+#[wasm_bindgen]
+pub fn transpile(input: &str) -> Result<(), JsValue> {
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+    let window = window().expect("no global `window` exists");
+    let document = window.document().expect("should have a document on window");
+    let body = document.body().unwrap();
+    let pairs = NiceHTMLParser::parse(Rule::root, &input).map_err(|err| err.to_string())?;
+    let mut variables: VarStack = VariableHashMapStack::new();
+
+    // log pairs to console
+    for pair in pairs.clone() {
+        console::log_1(&format!("{:?}", pair).into());
+    }
+
+    // process pairs
+    for pair in pairs {
+        let element = match pair.as_rule() {
+            Rule::definition => {process_definition(pair, &document, &mut variables)?; None},
+            Rule::element => Some(process_element(pair, &document, &mut variables)?),
+            Rule::variable => Some(process_variable(pair, &document, &mut variables)?),
+            Rule::string_line => Some(process_string_line(pair, &document)?),
+            _ => return Err("invalid child".into()),
+        };
+        if let Some(element) = element {
+            body.append_child(&element)?;
+        }
+    }
+    Ok(())
+}
+
+fn process_definition(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<(), JsValue> {
+    // process definition and its children recursively
+    log!("processing definition {:?}", pair);
+    Ok(())
+}
+
+fn process_element(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Element, JsValue> {
+    // process element and its children recursively
+    log!("processing element {:?}", pair);
+    let mut pair_inner = pair.into_inner();
+    let mut line_inner = pair_inner.next().unwrap().into_inner();
+
+    // create element
+    let tag_name = unwrap_identifier(line_inner.next().unwrap())?;
+    let element = document.create_element(tag_name)?;
+    
+    // handle attributes
+    if let Some(attributes) = line_inner.next() {
+        log!("processing attributes {:?}", attributes);
+        // TODO
+    }
+
+    // process children
+    if let Some(children) = pair_inner.next() {
+        for child in process_children(children, document, variables)? {
+            element.append_child(&child)?;
+        }
+    }
+
+    Ok(element)
+}
+
+fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Element, JsValue> {
+    // process variable
+    log!("processing variable {:?}", pair);
+    let mut pair_inner = pair.into_inner();
+
+    // get variable name and definition
+    let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
+    if variables.get(&var_name).is_none() {
+        return Err(format!("variable `{}` not defined", var_name).into());
+    }
+    let (arg_names, var_definition_, var_element_) = variables.get(&var_name).unwrap();
+
+    if let Some(var_definition) = var_definition_ {
+        // variable is a function that has not been processed yet
+        // parse arguments
+        let mut args: Vec<(&str, Element)> = vec![];
+        for arg_name in arg_names {
+            if let Some(arg_pair) = pair_inner.next() {
+                match arg_pair.as_rule() {
+                    Rule::string => {
+                        let element = document.create_element("span")?;
+                        element.set_inner_html(unwrap_string(arg_pair)?);
+                        args.push((arg_name, element));
+                    }
+                    Rule::variable => {
+                        let element = process_variable(arg_pair, document, variables)?;
+                        args.push((arg_name, element));
+                    }
+                    _ => {}
+                }
+            } else {
+                return Err(format!("not enough arguments for function `{}`", var_name).into());
+            }
+        }
+        if let Some(_) = pair_inner.next() {
+            return Err(format!("too many arguments for function `{}`", var_name).into());
+        }
+        variables.push();
+        for (arg_name, arg_element) in args {
+            variables.insert(arg_name, (vec![], None, Some(arg_element)));
+        }
+        let var_element = document.create_element("div")?;
+        for child in process_children(var_definition, document, variables)? {
+            var_element.append_child(&child)?;
+        }
+        variables.pop();
+        Ok(var_element)
+    } else if let Some(var_element) = var_element_ {
+        // variable is a variable
+        Ok(var_element)
+    } else {
+        // variable is not defined
+        Err(format!("variable `{}` not defined", var_name).into())
+    }
+}
+
+fn process_string_line(pair: Pair<Rule>, document: &web_sys::Document) -> Result<Element, JsValue> {
+    // process string
+    log!("processing string line {:?}", pair);
+    let mut pair_inner = pair.into_inner();
+    let string = unwrap_string(pair_inner.next().unwrap())?;
+    let element = document.create_element("span")?;
+    element.set_inner_html(string);
+    Ok(element)
+}
+
+fn process_children(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Vec<Element>, JsValue> {
+    // process children
+    log!("processing children {:?}", pair);
+    let mut elements: Vec<Element> = vec![];
+    for child in pair.into_inner() {
+        let element: Option<Element>  = match child.as_rule() {
+            Rule::definition => {process_definition(child, document, variables)?; None},
+            Rule::element => Some(process_element(child, document, variables)?),
+            Rule::variable => Some(process_variable(child, document, variables)?),
+            Rule::string_line => Some(process_string_line(child, document)?),
+            _ => return Err("invalid child".into()),
+        };
+        if let Some(element) = element {
+            elements.push(element);
+        }
+    }
+    Ok(elements)
+}
+
+fn unwrap_identifier(identifier: Pair<Rule>) -> Result<&str, JsValue> {
+    if identifier.as_rule() != Rule::identifier {
+        return Err("expected identifier".into());
+    }
+    Ok(identifier.as_str())
+}
+
+fn unwrap_string(string: Pair<Rule>) -> Result<&str, JsValue> {
+    if string.as_rule() != Rule::string {
+        return Err("expected string".into());
+    }
+    Ok(string.as_str())
 }
