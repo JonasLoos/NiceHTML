@@ -213,7 +213,9 @@ pub fn render(script: &str) -> Result<(), JsValue> {
                             given_args.push(element);
                         } else if arg.starts_with("$") {
                             // insert variable element
-                            let (arg_var, arg_var_arg_places) = variables.get(name).unwrap();  // TODO: not only check variables, but also function arguments
+                            // TODO: not only check variables, but also function arguments?
+                            // TODO: for nested functions, it seems like we receive here the called function as argument instead of the given arguments
+                            let (arg_var, arg_var_arg_places) = variables.get(name).unwrap();
                             if !arg_var_arg_places.iter().any(|x| x.1.len() > 0) {
                                 return err("Function calls inside other function calls are not allowed", line_nr, line);
                             }
