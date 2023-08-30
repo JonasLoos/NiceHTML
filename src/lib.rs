@@ -17,7 +17,7 @@ macro_rules! log {
 
 macro_rules! err {
     ($($arg:tt)*) => {{
-        Err(format!($($arg)*))
+        Err(format!($($arg)*).into())
     }};
 }
 
@@ -358,7 +358,8 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
             Rule::element => Some(process_element(pair, &document, &mut variables)?),
             Rule::variable => Some(process_variable(pair, &document, &mut variables)?),
             Rule::string_line => Some(process_string_line(pair, &document)?),
-            _ => return Err("invalid child".into()),
+            Rule::EOI => None,
+            idk => return err!("invalid child: {:?}", idk)
         };
         if let Some(element) = element {
             body.append_child(&element)?;
@@ -367,9 +368,20 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-fn process_definition(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<(), JsValue> {
+fn process_definition(pair: Pair<Rule>, _document: &web_sys::Document, variables: &mut VarStack) -> Result<(), JsValue> {
     // process definition and its children recursively
     log!("processing definition {:?}", pair);
+    let mut pair_inner = pair.into_inner();
+    let name = unwrap_identifier(pair_inner.next().unwrap())?;
+    let mut tmp: Vec<Pair<Rule>> = vec![];
+    while let Some(x) = pair_inner.next() {
+        tmp.push(x);
+    }
+    let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap()).collect();
+    let definition_body = tmp.last().unwrap().clone();
+    let new_pair: Pair<Rule> = Pair::new();
+    variables.insert(name, (arg_names, Some(definition_body), None));
+
     Ok(())
 }
 
@@ -401,13 +413,12 @@ fn process_element(pair: Pair<Rule>, document: &web_sys::Document, variables: &m
 
 fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Element, JsValue> {
     // process variable
-    log!("processing variable {:?}", pair);
     let mut pair_inner = pair.into_inner();
 
     // get variable name and definition
     let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
     if variables.get(&var_name).is_none() {
-        return Err(format!("variable `{}` not defined", var_name).into());
+        return err!("variable `{}` not defined", var_name);
     }
     let (arg_names, var_definition_, var_element_) = variables.get(&var_name).unwrap();
 
@@ -430,11 +441,11 @@ fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &
                     _ => {}
                 }
             } else {
-                return Err(format!("not enough arguments for function `{}`", var_name).into());
+                return err!("not enough arguments for function `{}`", var_name)
             }
         }
         if let Some(_) = pair_inner.next() {
-            return Err(format!("too many arguments for function `{}`", var_name).into());
+            return err!("too many arguments for function `{}`", var_name)
         }
         variables.push();
         for (arg_name, arg_element) in args {
@@ -451,7 +462,7 @@ fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &
         Ok(var_element)
     } else {
         // variable is not defined
-        Err(format!("variable `{}` not defined", var_name).into())
+        err!("variable `{}` not defined", var_name)
     }
 }
 
@@ -475,7 +486,9 @@ fn process_children(pair: Pair<Rule>, document: &web_sys::Document, variables: &
             Rule::element => Some(process_element(child, document, variables)?),
             Rule::variable => Some(process_variable(child, document, variables)?),
             Rule::string_line => Some(process_string_line(child, document)?),
-            _ => return Err("invalid child".into()),
+            Rule::EOI => None,
+            idk => return err!("invalid child: {:?}", idk)
+
         };
         if let Some(element) = element {
             elements.push(element);
@@ -486,14 +499,14 @@ fn process_children(pair: Pair<Rule>, document: &web_sys::Document, variables: &
 
 fn unwrap_identifier(identifier: Pair<Rule>) -> Result<&str, JsValue> {
     if identifier.as_rule() != Rule::identifier {
-        return Err("expected identifier".into());
+        return err!("expected identifier");
     }
     Ok(identifier.as_str())
 }
 
 fn unwrap_string(string: Pair<Rule>) -> Result<&str, JsValue> {
     if string.as_rule() != Rule::string {
-        return Err("expected string".into());
+        return err!("expected string");
     }
     Ok(string.as_str())
 }
