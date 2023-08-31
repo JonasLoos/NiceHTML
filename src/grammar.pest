@@ -3,7 +3,7 @@ comment = _{ "#" ~ ANY* }
 identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ ASCII_ALPHANUMERIC* }
 string = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-attribute = { identifier ~ ("=" ~ string)? }
+attribute = { identifier ~ "=" ~ string }
 element_name = { identifier ~ (" "+ ~ attribute*)?}
 element = { element_name ~ " "* ~ ("\n" ~ children)? }
 

@@ -1,12 +1,17 @@
+use std::rc::Rc;
+use std::cell::RefCell;
 use pest::iterators::Pair;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::Node;
 use web_sys::{window, console, Element};
 use std::collections::HashMap;
+use std::hash::Hash;
 use regex::Regex;
 use std::panic;
 use pest::Parser;
 use pest_derive::Parser;
+
 
 
 macro_rules! log {
@@ -287,50 +292,108 @@ pub fn render(script: &str) -> Result<(), JsValue> {
 }
 
 
-
-struct VariableHashMapStack<K, V> {
-    stack: Vec<HashMap<K, V>>,
+#[derive(Clone)]
+struct NiceElement<'a> {
+    tag_name: String,
+    attributes: Vec<(String, String)>,
+    children: Vec<NiceThing<'a>>,
+    scope: Option<HashMap<String, NiceVariable<'a>>>,
+    parent: Option<Rc<&'a NiceElement<'a>>>,
 }
 
-impl<K, V> VariableHashMapStack<K, V>
-where
-    K: std::cmp::Eq + std::hash::Hash + Clone,
-    V: Clone,
-{
+#[derive(Clone)]
+struct NiceString {
+    content: String,
+}
+
+#[derive(Clone)]
+struct NicePlaceholder {
+    arg_name: String,
+}
+
+
+#[derive(Clone)]
+enum NiceThing<'a> {
+    Element(NiceElement<'a>),
+    Str(NiceString),
+    Placeholder(NicePlaceholder),
+}
+
+#[derive(Clone)]
+struct NiceVariable<'a> {
+    name: String,
+    args: Vec<String>,
+    body: NiceElement<'a>,
+}
+
+impl NiceElement<'_> {
     fn new() -> Self {
-        VariableHashMapStack { stack: vec![HashMap::new()] }
-    }
-
-    fn push(&mut self) {
-        self.stack.push(HashMap::new());
-    }
-
-    fn pop(&mut self) {
-        if self.stack.len() > 1 {
-            self.stack.pop();
+        Self {
+            tag_name: "div".to_string(),
+            attributes: vec![],
+            children: vec![],
+            scope: None,
+            parent: None,
         }
     }
 
-    fn insert(&mut self, key: K, value: V) {
-        if let Some(top) = self.stack.last_mut() {
-            top.insert(key, value);
+    fn new_str(&mut self, string: String){
+        self.append_child(NiceThing::Str(NiceString{content: string}));
+    }
+
+    fn new_placeholder(&mut self, arg_name: String) {
+        self.append_child(NiceThing::Placeholder(NicePlaceholder{arg_name: arg_name}));
+    }
+
+    fn append_child(&mut self, child: NiceThing) {
+        self.children.push(child);
+    }
+
+    fn add_variable(&mut self, variable: NiceVariable) {
+        if let Some(scope) = &mut self.scope {
+            scope.insert(variable.name.clone(), variable);
+        } else {
+            self.scope = Some(HashMap::new());
+            self.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
         }
     }
 
-    fn get(&self, key: &K) -> Option<V> {
-        for map in self.stack.iter().rev() {
-            if let Some(value) = map.get(key) {
-                return Some(value.clone());
+    fn get_variable(&self, name: &str) -> Option<NiceVariable> {
+        let mut current_element = self.parent.clone();
+        
+        while let Some(parent_rc) = current_element {
+            let parent = &*parent_rc;
+            
+            if let Some(scope) = &parent.scope {
+                if let Some(var) = scope.get(name) {
+                    return Some(var.clone());
+                }
             }
+            
+            current_element = parent.parent.clone();
         }
+        
         None
     }
-}
+    
+    
 
-// variable_name: (argument_names, definition?, element?)
-// definition: Pairs are good to easily insert normal variables during the processing of the function body
-// element: Elements are good to handle nested function calls, where pairs would cause arugment function calls to use the inner variable scope instead of the outer one
-type VarStack<'a> = VariableHashMapStack<&'a str, (Vec<&'a str>, Option<Pair<'a, Rule>>, Option<Element>)>;
+    fn insert_arguments(&mut self, arg_names: &Vec<String>, args: &Vec<NiceThing>) {
+        for child in self.children.iter_mut() {
+            match child {
+                NiceThing::Element(element) => {
+                    element.insert_arguments(arg_names, args);
+                },
+                NiceThing::Str(_) => {},
+                NiceThing::Placeholder(placeholder) => {
+                    if let Some(pos) = arg_names.iter().position(|x| *x == placeholder.arg_name) {
+                        *child = args[pos].clone();
+                    }
+                }
+            }
+        }
+    }
+}
 
 
 #[derive(Parser)]
@@ -344,7 +407,7 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     let document = window.document().expect("should have a document on window");
     let body = document.body().unwrap();
     let pairs = NiceHTMLParser::parse(Rule::root, &input).map_err(|err| err.to_string())?;
-    let mut variables: VarStack = VariableHashMapStack::new();
+    let mut stack = NiceElement::new();
 
     // log pairs to console
     for pair in pairs.clone() {
@@ -353,22 +416,27 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
 
     // process pairs
     for pair in pairs {
-        let element = match pair.as_rule() {
-            Rule::definition => {process_definition(pair, &document, &mut variables)?; None},
-            Rule::element => Some(process_element(pair, &document, &mut variables)?),
-            Rule::variable => Some(process_variable(pair, &document, &mut variables)?),
-            Rule::string_line => Some(process_string_line(pair, &document)?),
-            Rule::EOI => None,
-            idk => return err!("invalid child: {:?}", idk)
-        };
-        if let Some(element) = element {
-            body.append_child(&element)?;
-        }
+        process_line(pair, &mut stack)?;
     }
+
+    // TODO: convert stack to html and append to body
+
     Ok(())
 }
 
-fn process_definition(pair: Pair<Rule>, _document: &web_sys::Document, variables: &mut VarStack) -> Result<(), JsValue> {
+fn process_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
+    match pair.as_rule() {
+        Rule::definition => {process_definition(pair, stack)?; None},
+        Rule::element => Some(process_element(pair, stack)?),
+        Rule::variable => Some(process_variable(pair, stack)?),
+        Rule::string_line => Some(process_string_line(pair, stack)?),
+        Rule::EOI => None,
+        idk => return err!("invalid child: {:?}", idk)
+    };
+    Ok(())
+}
+
+fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process definition and its children recursively
     log!("processing definition {:?}", pair);
     let mut pair_inner = pair.into_inner();
@@ -377,15 +445,24 @@ fn process_definition(pair: Pair<Rule>, _document: &web_sys::Document, variables
     while let Some(x) = pair_inner.next() {
         tmp.push(x);
     }
-    let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap()).collect();
+    let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap().to_string()).collect();
     let definition_body = tmp.last().unwrap().clone();
-    let new_pair: Pair<Rule> = Pair::new();
-    variables.insert(name, (arg_names, Some(definition_body), None));
+    let mut definition_body_element = NiceElement::new();
+    process_children(definition_body, &mut definition_body_element)?;
+
+    // create variable
+    let variable = NiceVariable {
+        name: name.to_string(),
+        args: arg_names,
+        body: definition_body_element,
+    };
+
+    stack.add_variable(variable);
 
     Ok(())
 }
 
-fn process_element(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Element, JsValue> {
+fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process element and its children recursively
     log!("processing element {:?}", pair);
     let mut pair_inner = pair.into_inner();
@@ -393,53 +470,60 @@ fn process_element(pair: Pair<Rule>, document: &web_sys::Document, variables: &m
 
     // create element
     let tag_name = unwrap_identifier(line_inner.next().unwrap())?;
-    let element = document.create_element(tag_name)?;
     
     // handle attributes
-    if let Some(attributes) = line_inner.next() {
-        log!("processing attributes {:?}", attributes);
-        // TODO
+    let mut attributes: Vec<(String, String)> = vec![];
+    while let Some(attribute) = line_inner.next() {
+        let attribute_inner = attribute.into_inner();
+        let attr_name = unwrap_identifier(attribute_inner.next().unwrap())?;
+        let attr_value = unwrap_string(attribute_inner.next().unwrap())?;
+        attributes.push((attr_name.to_string(), attr_value.to_string()));
     }
+
+    let mut new_stack = NiceElement {
+        tag_name: tag_name.to_string(),
+        attributes: attributes,
+        children: vec![],
+        scope: None,
+        parent: Some(Rc::new(stack)),
+    };
 
     // process children
     if let Some(children) = pair_inner.next() {
-        for child in process_children(children, document, variables)? {
-            element.append_child(&child)?;
-        }
+        process_children(children, &mut new_stack)?
     }
 
-    Ok(element)
+    stack.append_child(NiceThing::Element(new_stack));
+
+    Ok(())
 }
 
-fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Element, JsValue> {
+
+fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process variable
     let mut pair_inner = pair.into_inner();
 
     // get variable name and definition
     let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
-    if variables.get(&var_name).is_none() {
-        return err!("variable `{}` not defined", var_name);
-    }
-    let (arg_names, var_definition_, var_element_) = variables.get(&var_name).unwrap();
-
-    if let Some(var_definition) = var_definition_ {
-        // variable is a function that has not been processed yet
-        // parse arguments
-        let mut args: Vec<(&str, Element)> = vec![];
-        for arg_name in arg_names {
+    let mut var_body: NiceElement;
+    let arg_names: Vec<String>;
+    let mut args: Vec<NiceThing> = vec![];
+    if let Some(variable) = stack.get_variable(var_name) {
+        arg_names = variable.args.clone();
+        var_body = variable.body.clone();
+        for arg_name in variable.args.clone() {
             if let Some(arg_pair) = pair_inner.next() {
+                let mut arg_elem = NiceElement::new();
                 match arg_pair.as_rule() {
                     Rule::string => {
-                        let element = document.create_element("span")?;
-                        element.set_inner_html(unwrap_string(arg_pair)?);
-                        args.push((arg_name, element));
+                        arg_elem.new_str(unwrap_string(arg_pair)?.to_string());
                     }
                     Rule::variable => {
-                        let element = process_variable(arg_pair, document, variables)?;
-                        args.push((arg_name, element));
+                        process_variable(arg_pair, &mut arg_elem)?;
                     }
-                    _ => {}
+                    _ => return err!("invalid argument for arg `{}` for function `{}`", arg_name, var_name)
                 }
+                args.push(NiceThing::Element(arg_elem));
             } else {
                 return err!("not enough arguments for function `{}`", var_name)
             }
@@ -447,54 +531,33 @@ fn process_variable(pair: Pair<Rule>, document: &web_sys::Document, variables: &
         if let Some(_) = pair_inner.next() {
             return err!("too many arguments for function `{}`", var_name)
         }
-        variables.push();
-        for (arg_name, arg_element) in args {
-            variables.insert(arg_name, (vec![], None, Some(arg_element)));
-        }
-        let var_element = document.create_element("div")?;
-        for child in process_children(var_definition, document, variables)? {
-            var_element.append_child(&child)?;
-        }
-        variables.pop();
-        Ok(var_element)
-    } else if let Some(var_element) = var_element_ {
-        // variable is a variable
-        Ok(var_element)
     } else {
-        // variable is not defined
-        err!("variable `{}` not defined", var_name)
+        return err!("variable `{}` not defined", var_name);
     }
+
+    var_body.insert_arguments(&arg_names, &args);
+
+    stack.append_child(NiceThing::Element(var_body));
+
+    Ok(())
 }
 
-fn process_string_line(pair: Pair<Rule>, document: &web_sys::Document) -> Result<Element, JsValue> {
+fn process_string_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process string
     log!("processing string line {:?}", pair);
     let mut pair_inner = pair.into_inner();
     let string = unwrap_string(pair_inner.next().unwrap())?;
-    let element = document.create_element("span")?;
-    element.set_inner_html(string);
-    Ok(element)
+    stack.new_str(string.to_string());
+    Ok(())
 }
 
-fn process_children(pair: Pair<Rule>, document: &web_sys::Document, variables: &mut VarStack) -> Result<Vec<Element>, JsValue> {
+fn process_children(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process children
     log!("processing children {:?}", pair);
-    let mut elements: Vec<Element> = vec![];
     for child in pair.into_inner() {
-        let element: Option<Element>  = match child.as_rule() {
-            Rule::definition => {process_definition(child, document, variables)?; None},
-            Rule::element => Some(process_element(child, document, variables)?),
-            Rule::variable => Some(process_variable(child, document, variables)?),
-            Rule::string_line => Some(process_string_line(child, document)?),
-            Rule::EOI => None,
-            idk => return err!("invalid child: {:?}", idk)
-
-        };
-        if let Some(element) = element {
-            elements.push(element);
-        }
+        process_line(child, stack)?;
     }
-    Ok(elements)
+    Ok(())
 }
 
 fn unwrap_identifier(identifier: Pair<Rule>) -> Result<&str, JsValue> {
