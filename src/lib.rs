@@ -297,8 +297,7 @@ struct NiceElement<'a> {
     tag_name: String,
     attributes: Vec<(String, String)>,
     children: Vec<NiceThing<'a>>,
-    scope: Option<HashMap<String, NiceVariable<'a>>>,
-    parent: Option<Rc<&'a NiceElement<'a>>>,
+    scope: VarScope<'a>,
 }
 
 #[derive(Clone)]
@@ -326,63 +325,73 @@ struct NiceVariable<'a> {
     body: NiceElement<'a>,
 }
 
-impl NiceElement<'_> {
-    fn new() -> Self {
+#[derive(Clone)]
+struct VarScope<'a> {
+    scope: Option<HashMap<String, NiceVariable<'a>>>,
+    parent: Option<&'a VarScope<'a>>,
+}
+
+impl<'a> NiceElement<'a> {
+
+    fn new(tag_name: &str, attributes: Vec<(String, String)>) -> Self {
         Self {
-            tag_name: "div".to_string(),
-            attributes: vec![],
+            tag_name: tag_name.to_string(),
+            attributes: attributes,
             children: vec![],
-            scope: None,
-            parent: None,
+            scope: VarScope{scope: None, parent: None}
         }
     }
 
-    fn new_str(&mut self, string: String){
+    fn new_str(&'a mut self, string: String){
         self.append_child(NiceThing::Str(NiceString{content: string}));
     }
 
-    fn new_placeholder(&mut self, arg_name: String) {
+    fn new_placeholder(&'a mut self, arg_name: String) {
         self.append_child(NiceThing::Placeholder(NicePlaceholder{arg_name: arg_name}));
     }
 
-    fn append_child(&mut self, child: NiceThing) {
+    fn append_child(&'a mut self, child: NiceThing<'a>) {
         self.children.push(child);
-    }
-
-    fn add_variable(&mut self, variable: NiceVariable) {
-        if let Some(scope) = &mut self.scope {
-            scope.insert(variable.name.clone(), variable);
-        } else {
-            self.scope = Some(HashMap::new());
-            self.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
+        if let NiceThing::Element(elem) = self.children.last_mut().unwrap() {
+            elem.scope.parent = Some(&self.scope);
         }
     }
 
-    fn get_variable(&self, name: &str) -> Option<NiceVariable> {
-        let mut current_element = self.parent.clone();
-        
-        while let Some(parent_rc) = current_element {
-            let parent = &*parent_rc;
-            
-            if let Some(scope) = &parent.scope {
+    fn add_variable(&mut self, variable: NiceVariable<'a>) {
+        if let Some(scope) = &mut self.scope.scope {
+            scope.insert(variable.name.clone(), variable);
+        } else {
+            self.scope.scope = Some(HashMap::new());
+            self.scope.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
+        }
+    }
+
+    fn get_variable(&self, name: &str) -> Option<&NiceVariable<'a>> {
+        let mut current_element = &self.scope;
+
+        loop {
+            if let Some(scope) = &current_element.scope {
                 if let Some(var) = scope.get(name) {
-                    return Some(var.clone());
+                    return Some(var);
                 }
             }
             
-            current_element = parent.parent.clone();
+            if let Some(parent) = current_element.parent {
+                current_element = parent;
+            } else {
+                break;
+            }
         }
-        
         None
     }
     
     
 
-    fn insert_arguments(&mut self, arg_names: &Vec<String>, args: &Vec<NiceThing>) {
+    fn insert_arguments(&mut self, arg_names: &Vec<String>, args: Vec<NiceThing<'a>>) {
         for child in self.children.iter_mut() {
             match child {
                 NiceThing::Element(element) => {
-                    element.insert_arguments(arg_names, args);
+                    element.insert_arguments(arg_names, args.clone());
                 },
                 NiceThing::Str(_) => {},
                 NiceThing::Placeholder(placeholder) => {
@@ -407,7 +416,7 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     let document = window.document().expect("should have a document on window");
     let body = document.body().unwrap();
     let pairs = NiceHTMLParser::parse(Rule::root, &input).map_err(|err| err.to_string())?;
-    let mut stack = NiceElement::new();
+    let mut stack: NiceElement = NiceElement::new("div", vec![]);
 
     // log pairs to console
     for pair in pairs.clone() {
@@ -424,7 +433,7 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-fn process_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
+fn process_line<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Result<(), JsValue> {
     match pair.as_rule() {
         Rule::definition => {process_definition(pair, stack)?; None},
         Rule::element => Some(process_element(pair, stack)?),
@@ -447,7 +456,7 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
     }
     let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap().to_string()).collect();
     let definition_body = tmp.last().unwrap().clone();
-    let mut definition_body_element = NiceElement::new();
+    let mut definition_body_element = NiceElement::new("div", vec![]);
     process_children(definition_body, &mut definition_body_element)?;
 
     // create variable
@@ -462,7 +471,7 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
     Ok(())
 }
 
-fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
+fn process_element<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Result<(), JsValue> {
     // process element and its children recursively
     log!("processing element {:?}", pair);
     let mut pair_inner = pair.into_inner();
@@ -474,19 +483,13 @@ fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsVa
     // handle attributes
     let mut attributes: Vec<(String, String)> = vec![];
     while let Some(attribute) = line_inner.next() {
-        let attribute_inner = attribute.into_inner();
+        let mut attribute_inner = attribute.into_inner();
         let attr_name = unwrap_identifier(attribute_inner.next().unwrap())?;
         let attr_value = unwrap_string(attribute_inner.next().unwrap())?;
         attributes.push((attr_name.to_string(), attr_value.to_string()));
     }
 
-    let mut new_stack = NiceElement {
-        tag_name: tag_name.to_string(),
-        attributes: attributes,
-        children: vec![],
-        scope: None,
-        parent: Some(Rc::new(stack)),
-    };
+    let mut new_stack: NiceElement<'a> = NiceElement::new(tag_name, attributes);
 
     // process children
     if let Some(children) = pair_inner.next() {
@@ -499,7 +502,7 @@ fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsVa
 }
 
 
-fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
+fn process_variable<'a>(pair: Pair<Rule>, stack: &mut NiceElement<'a>) -> Result<(), JsValue> {
     // process variable
     let mut pair_inner = pair.into_inner();
 
@@ -507,13 +510,13 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
     let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
     let mut var_body: NiceElement;
     let arg_names: Vec<String>;
-    let mut args: Vec<NiceThing> = vec![];
+    let mut args: Vec<NiceThing<'a>> = vec![];
     if let Some(variable) = stack.get_variable(var_name) {
         arg_names = variable.args.clone();
         var_body = variable.body.clone();
         for arg_name in variable.args.clone() {
             if let Some(arg_pair) = pair_inner.next() {
-                let mut arg_elem = NiceElement::new();
+                let mut arg_elem = NiceElement::new("div", vec![]);
                 match arg_pair.as_rule() {
                     Rule::string => {
                         arg_elem.new_str(unwrap_string(arg_pair)?.to_string());
@@ -535,7 +538,7 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
         return err!("variable `{}` not defined", var_name);
     }
 
-    var_body.insert_arguments(&arg_names, &args);
+    var_body.insert_arguments(&arg_names, args);
 
     stack.append_child(NiceThing::Element(var_body));
 
