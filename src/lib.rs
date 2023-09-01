@@ -230,21 +230,44 @@ fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsVa
     
     // handle attributes
     let mut attributes: Vec<(String, String)> = vec![];
-    while let Some(attribute) = line_inner.next() {
-        let mut attribute_inner = attribute.into_inner();
-        let attr_name = unwrap_identifier(attribute_inner.next().unwrap())?;
-        let attr_value = unwrap_string(attribute_inner.next().unwrap())?;
-        attributes.push((attr_name.to_string(), attr_value.to_string()));
+    let mut id_attributes: Vec<String> = vec![];
+    let mut class_attributes: Vec<String> = vec![];
+    while let Some(attribute_) = line_inner.next() {
+        let attribute = attribute_.into_inner().next().unwrap();
+        match attribute.as_rule() {
+            Rule::id_attribute => {
+                let attr_value = unwrap_identifier(attribute.into_inner().next().unwrap())?;
+                id_attributes.push(attr_value.to_string());
+            },
+            Rule::class_attribute => {
+                let attr_value = unwrap_identifier(attribute.into_inner().next().unwrap())?;
+                class_attributes.push(attr_value.to_string());
+            },
+            _ => {
+                let mut attribute_inner = attribute.into_inner();
+                let attr_name = unwrap_identifier(attribute_inner.next().unwrap())?;
+                let attr_value = unwrap_string(attribute_inner.next().unwrap())?;
+                attributes.push((attr_name.to_string(), attr_value.to_string()));
+            }
+        }
+    }
+    if id_attributes.len() > 1 {
+        return err!("multiple id attributes found");
+    }
+    for id in id_attributes {
+        attributes.push(("id".to_string(), id));
+    }
+    if class_attributes.len() > 0 {
+        attributes.push(("class".to_string(), class_attributes.join(" ")));
     }
 
+    // process children
     let mut new_stack: NiceElement = NiceElement {
         tag_name: tag_name.to_string(),
         attributes: attributes,
         children: vec![],
         scope: Rc::new(RefCell::new(NiceScope{scope: None, parent: Some(stack.scope.clone())})),
     };
-
-    // process children
     if let Some(children) = pair_inner.next() {
         process_children(children, &mut new_stack)?
     }

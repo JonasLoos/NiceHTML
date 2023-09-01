@@ -1,11 +1,15 @@
 comment = _{ "#" ~ (!"\n" ~ ANY)* }  // line comment
 w = _{ " "* }  // whitespace
 
-identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ (ASCII_ALPHANUMERIC | "_" )* }
+identifier = { ('a'..'z' | 'A'..'Z' | "_" | "-") ~ (ASCII_ALPHANUMERIC | "_" | "-" )* }
 string = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-attribute = { identifier ~ w ~ "=" ~ w ~ string }
-element_name = { identifier ~ (" "+ ~ attribute*)?}
+
+id_attribute = { "#" ~ identifier }
+class_attribute = { "." ~ identifier }
+base_attribute = { identifier ~ w ~ "=" ~ w ~ string }
+attribute = { id_attribute | class_attribute | base_attribute }
+element_name = { identifier ~ (" "+ ~ attribute*)*}
 element = { element_name ~ w ~ ("\n" ~ children)? }
 
 definition = { identifier ~ ("(" ~ w ~ identifier ~ (w ~ "," ~ w ~ identifier)* ~ w ~ ")")? ~ w ~ "=" ~ w ~ "\n" ~ children }
