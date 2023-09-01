@@ -106,7 +106,7 @@ impl NiceElement {
     }
 
     fn get_variable(&self, name: &str) -> Option<NiceVariable> {
-        self.scope.as_ref().borrow().get_variable(name).clone()
+        self.scope.as_ref().borrow().get_variable(name)
     }
 
     fn insert_arguments(&mut self, arg_names: &Vec<String>, args: Vec<NiceThing>) {
@@ -134,7 +134,7 @@ impl NiceScope {
             }
         }
         if let Some(parent) = &self.parent {
-            return parent.as_ref().borrow().get_variable(name).clone();
+            return parent.as_ref().borrow().get_variable(name);
         }
         None
     }
@@ -162,7 +162,7 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     }
 
     // log
-    log!("{}", &stack_to_str(&stack)?);
+    // log!("{}", &stack_to_str(&stack)?);
 
     // convert stack to html and append to body
     for elem in stack_to_html(&stack, &document)? {
@@ -200,7 +200,7 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
         scope.parent = Some(stack.scope.clone());
         let mut map = HashMap::new();
         for arg_name in arg_names.clone() {
-            map.insert(arg_name.clone(), NiceVariable { name: arg_name.clone(), args: vec![], body: NiceThing::Placeholder(NicePlaceholder {arg_name: arg_name}) });
+            map.insert(arg_name.clone(), NiceVariable { name: arg_name.clone(), args: vec![], body: NiceThing::Placeholder(NicePlaceholder {arg_name}) });
         }
         scope.scope = Some(map);
     }
@@ -290,9 +290,9 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
     let arg_names: Vec<String>;
     let mut args: Vec<NiceThing> = vec![];
     if let Some(variable) = stack.get_variable(var_name) {
-        arg_names = variable.args.clone();
-        var_body = variable.body.clone();
-        for arg_name in variable.args.clone() {
+        arg_names = variable.args;
+        var_body = variable.body;
+        for arg_name in arg_names.clone() {
             if let Some(arg_pair) = pair_inner.next() {
                 let mut arg_elem = NiceElement::new_empty();
                 arg_elem.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());
