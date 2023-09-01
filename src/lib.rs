@@ -324,7 +324,7 @@ enum NiceThing {
 struct NiceVariable {
     name: String,
     args: Vec<String>,
-    body: NiceElement,
+    body: NiceThing,
 }
 
 #[derive(Clone)]
@@ -358,7 +358,7 @@ impl NiceElement {
 
     fn add_variable(&mut self, variable: NiceVariable) {
         let mut scope = self.scope.as_ref().borrow_mut();
-        if scope.scope.is_some() {
+        if scope.scope.is_none() {
             scope.scope = Some(HashMap::new());
         }
         scope.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
@@ -450,18 +450,28 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
     while let Some(x) = pair_inner.next() {
         tmp.push(x);
     }
-    let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap().to_string()).collect();
+    let arg_names: Vec<String> = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap().to_string()).collect();
     let definition_body = tmp.last().unwrap().clone();
     let mut definition_body_element = NiceElement::new_empty();
-    definition_body_element.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());
+    {
+        let mut scope = definition_body_element.scope.as_ref().borrow_mut();
+        scope.parent = Some(stack.scope.clone());
+        let mut map = HashMap::new();
+        for arg_name in arg_names.clone() {
+            map.insert(arg_name.clone(), NiceVariable { name: arg_name.clone(), args: vec![], body: NiceThing::Placeholder(NicePlaceholder {arg_name: arg_name}) });
+        }
+        scope.scope = Some(map);
+    }
     process_children(definition_body, &mut definition_body_element)?;
 
     // create variable
     let variable = NiceVariable {
         name: name.to_string(),
         args: arg_names,
-        body: definition_body_element,
+        body: NiceThing::Element(definition_body_element),
     };
+
+    log!("created variable `{}`", variable.name);
 
     stack.add_variable(variable);
 
@@ -497,6 +507,8 @@ fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsVa
         process_children(children, &mut new_stack)?
     }
 
+    log!("created element `{}`", new_stack.tag_name);
+
     stack.append_child(NiceThing::Element(new_stack));
 
     Ok(())
@@ -509,7 +521,7 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
 
     // get variable name and definition
     let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
-    let mut var_body: NiceElement;
+    let mut var_body: NiceThing;
     let arg_names: Vec<String>;
     let mut args: Vec<NiceThing> = vec![];
     if let Some(variable) = stack.get_variable(var_name) {
@@ -525,7 +537,7 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
                     Rule::variable => {
                         process_variable(arg_pair, &mut arg_elem)?;
                     }
-                    _ => return err!("invalid argument for arg `{}` for function `{}`", arg_name, var_name)
+                    tmp => return err!("invalid argument type `{:?}` for arg `{}` for function `{}`", tmp, arg_name, var_name)
                 }
                 args.push(NiceThing::Element(arg_elem));
             } else {
@@ -536,12 +548,18 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
             return err!("too many arguments for function `{}`", var_name)
         }
     } else {
+        // TODO: this also happens, if there is a variable wich is an argument to an other calling function
+        // TODO: this might be solvable, if the scope of the calling function is prepended to the scope of the called function
         return err!("variable `{}` not defined", var_name);
     }
 
-    var_body.insert_arguments(&arg_names, args);
+    if let NiceThing::Element(ref mut var_body_elem) = &mut var_body {
+        var_body_elem.insert_arguments(&arg_names, args);
+    }
 
-    stack.append_child(NiceThing::Element(var_body));
+    log!("inserted variable `{}` with args `({})`", var_name, arg_names.join(", "));
+
+    stack.append_child(var_body);
 
     Ok(())
 }

@@ -11,7 +11,7 @@ definition = { identifier ~ ("(" ~ identifier ~ ("," ~ identifier)* ~ ")")? ~ " 
 
 string_line = { string }
 
-parameter = { string | variable }
+parameter = _{ string | variable }
 variable = { "$" ~ identifier ~ ("(" ~ " "* ~ parameter ~ (" "* ~ "," ~ " "* ~ parameter)* ~ " "* ~ ")")? }
 
 content = _{ definition | element | variable | string_line | comment | (" " | "\t")* }
