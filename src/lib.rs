@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::cell::RefCell;
 use pest::iterators::Pair;
@@ -293,11 +295,11 @@ pub fn render(script: &str) -> Result<(), JsValue> {
 
 
 #[derive(Clone)]
-struct NiceElement<'a> {
+struct NiceElement {
     tag_name: String,
     attributes: Vec<(String, String)>,
-    children: Vec<NiceThing<'a>>,
-    scope: VarScope<'a>,
+    children: Vec<NiceThing>,
+    scope: Rc<RefCell<VarScope>>,  // TODO: do I need RefCell? I only want to change it when I insert it's parent. Maybe I can do that before I add it as child
 }
 
 #[derive(Clone)]
@@ -312,82 +314,63 @@ struct NicePlaceholder {
 
 
 #[derive(Clone)]
-enum NiceThing<'a> {
-    Element(NiceElement<'a>),
+enum NiceThing {
+    Element(NiceElement),
     Str(NiceString),
     Placeholder(NicePlaceholder),
 }
 
 #[derive(Clone)]
-struct NiceVariable<'a> {
+struct NiceVariable {
     name: String,
     args: Vec<String>,
-    body: NiceElement<'a>,
+    body: NiceElement,
 }
 
 #[derive(Clone)]
-struct VarScope<'a> {
-    scope: Option<HashMap<String, NiceVariable<'a>>>,
-    parent: Option<&'a VarScope<'a>>,
+struct VarScope {
+    scope: Option<HashMap<String, NiceVariable>>,
+    parent: Option<Rc<RefCell<VarScope>>>,
 }
 
-impl<'a> NiceElement<'a> {
+impl NiceElement {
 
-    fn new(tag_name: &str, attributes: Vec<(String, String)>) -> Self {
+    fn new_empty() -> Self {
         Self {
-            tag_name: tag_name.to_string(),
-            attributes: attributes,
+            tag_name: "div".to_string(),
+            attributes: vec![],
             children: vec![],
-            scope: VarScope{scope: None, parent: None}
+            scope: Rc::new(RefCell::new(VarScope{scope: None, parent: None})),
         }
     }
 
-    fn new_str(&'a mut self, string: String){
+    fn new_str(&mut self, string: String){
         self.append_child(NiceThing::Str(NiceString{content: string}));
     }
 
-    fn new_placeholder(&'a mut self, arg_name: String) {
+    fn new_placeholder(&mut self, arg_name: String) {
         self.append_child(NiceThing::Placeholder(NicePlaceholder{arg_name: arg_name}));
     }
 
-    fn append_child(&'a mut self, child: NiceThing<'a>) {
+    fn append_child(&mut self, child: NiceThing) {
         self.children.push(child);
-        if let NiceThing::Element(elem) = self.children.last_mut().unwrap() {
-            elem.scope.parent = Some(&self.scope);
-        }
     }
 
-    fn add_variable(&mut self, variable: NiceVariable<'a>) {
-        if let Some(scope) = &mut self.scope.scope {
-            scope.insert(variable.name.clone(), variable);
-        } else {
-            self.scope.scope = Some(HashMap::new());
-            self.scope.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
+    fn add_variable(&mut self, variable: NiceVariable) {
+        let mut scope = self.scope.as_ref().borrow_mut();
+        if scope.scope.is_some() {
+            scope.scope = Some(HashMap::new());
         }
+        scope.scope.as_mut().unwrap().insert(variable.name.clone(), variable);
     }
 
-    fn get_variable(&self, name: &str) -> Option<&NiceVariable<'a>> {
-        let mut current_element = &self.scope;
-
-        loop {
-            if let Some(scope) = &current_element.scope {
-                if let Some(var) = scope.get(name) {
-                    return Some(var);
-                }
-            }
-            
-            if let Some(parent) = current_element.parent {
-                current_element = parent;
-            } else {
-                break;
-            }
-        }
-        None
+    fn get_variable(&self, name: &str) -> Option<NiceVariable> {
+        self.scope.as_ref().borrow().get_variable(name).clone()
     }
     
     
 
-    fn insert_arguments(&mut self, arg_names: &Vec<String>, args: Vec<NiceThing<'a>>) {
+    fn insert_arguments(&mut self, arg_names: &Vec<String>, args: Vec<NiceThing>) {
         for child in self.children.iter_mut() {
             match child {
                 NiceThing::Element(element) => {
@@ -404,6 +387,20 @@ impl<'a> NiceElement<'a> {
     }
 }
 
+impl VarScope {
+    fn get_variable(&self, name: &str) -> Option<NiceVariable> {
+        if let Some(scope) = &self.scope {
+            if let Some(var) = scope.get(name) {
+                return Some(var.clone());
+            }
+        }
+        if let Some(parent) = &self.parent {
+            return parent.as_ref().borrow().get_variable(name).clone();
+        }
+        None
+    }
+}
+
 
 #[derive(Parser)]
 #[grammar = "src/grammar.pest"]
@@ -416,12 +413,12 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     let document = window.document().expect("should have a document on window");
     let body = document.body().unwrap();
     let pairs = NiceHTMLParser::parse(Rule::root, &input).map_err(|err| err.to_string())?;
-    let mut stack: NiceElement = NiceElement::new("div", vec![]);
+    let mut stack: NiceElement = NiceElement::new_empty();
 
     // log pairs to console
-    for pair in pairs.clone() {
-        console::log_1(&format!("{:?}", pair).into());
-    }
+    // for pair in pairs.clone() {
+    //     console::log_1(&format!("{:?}", pair).into());
+    // }
 
     // process pairs
     for pair in pairs {
@@ -433,7 +430,7 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     Ok(())
 }
 
-fn process_line<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Result<(), JsValue> {
+fn process_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     match pair.as_rule() {
         Rule::definition => {process_definition(pair, stack)?; None},
         Rule::element => Some(process_element(pair, stack)?),
@@ -447,7 +444,6 @@ fn process_line<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Result<
 
 fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process definition and its children recursively
-    log!("processing definition {:?}", pair);
     let mut pair_inner = pair.into_inner();
     let name = unwrap_identifier(pair_inner.next().unwrap())?;
     let mut tmp: Vec<Pair<Rule>> = vec![];
@@ -456,7 +452,8 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
     }
     let arg_names = tmp[..tmp.len()-1].iter().map(|x| unwrap_identifier(x.clone()).unwrap().to_string()).collect();
     let definition_body = tmp.last().unwrap().clone();
-    let mut definition_body_element = NiceElement::new("div", vec![]);
+    let mut definition_body_element = NiceElement::new_empty();
+    definition_body_element.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());
     process_children(definition_body, &mut definition_body_element)?;
 
     // create variable
@@ -471,9 +468,8 @@ fn process_definition(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), J
     Ok(())
 }
 
-fn process_element<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Result<(), JsValue> {
+fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process element and its children recursively
-    log!("processing element {:?}", pair);
     let mut pair_inner = pair.into_inner();
     let mut line_inner = pair_inner.next().unwrap().into_inner();
 
@@ -489,7 +485,12 @@ fn process_element<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Resu
         attributes.push((attr_name.to_string(), attr_value.to_string()));
     }
 
-    let mut new_stack: NiceElement<'a> = NiceElement::new(tag_name, attributes);
+    let mut new_stack: NiceElement = NiceElement {
+        tag_name: tag_name.to_string(),
+        attributes: attributes,
+        children: vec![],
+        scope: Rc::new(RefCell::new(VarScope{scope: None, parent: Some(stack.scope.clone())})),
+    };
 
     // process children
     if let Some(children) = pair_inner.next() {
@@ -502,7 +503,7 @@ fn process_element<'a>(pair: Pair<Rule>, stack: &'a mut NiceElement<'a>) -> Resu
 }
 
 
-fn process_variable<'a>(pair: Pair<Rule>, stack: &mut NiceElement<'a>) -> Result<(), JsValue> {
+fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process variable
     let mut pair_inner = pair.into_inner();
 
@@ -510,13 +511,13 @@ fn process_variable<'a>(pair: Pair<Rule>, stack: &mut NiceElement<'a>) -> Result
     let var_name = unwrap_identifier(pair_inner.next().unwrap())?;
     let mut var_body: NiceElement;
     let arg_names: Vec<String>;
-    let mut args: Vec<NiceThing<'a>> = vec![];
+    let mut args: Vec<NiceThing> = vec![];
     if let Some(variable) = stack.get_variable(var_name) {
         arg_names = variable.args.clone();
         var_body = variable.body.clone();
         for arg_name in variable.args.clone() {
             if let Some(arg_pair) = pair_inner.next() {
-                let mut arg_elem = NiceElement::new("div", vec![]);
+                let mut arg_elem = NiceElement::new_empty();
                 match arg_pair.as_rule() {
                     Rule::string => {
                         arg_elem.new_str(unwrap_string(arg_pair)?.to_string());
@@ -547,7 +548,6 @@ fn process_variable<'a>(pair: Pair<Rule>, stack: &mut NiceElement<'a>) -> Result
 
 fn process_string_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process string
-    log!("processing string line {:?}", pair);
     let mut pair_inner = pair.into_inner();
     let string = unwrap_string(pair_inner.next().unwrap())?;
     stack.new_str(string.to_string());
@@ -556,7 +556,6 @@ fn process_string_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), 
 
 fn process_children(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
     // process children
-    log!("processing children {:?}", pair);
     for child in pair.into_inner() {
         process_line(child, stack)?;
     }
