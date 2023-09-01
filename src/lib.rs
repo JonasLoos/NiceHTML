@@ -12,12 +12,14 @@ use pest_derive::Parser;
 
 
 
+/// simple logging using a format string.
 macro_rules! log {
     ($($arg:tt)*) => {{
         console::log_1(&format!($($arg)*).into());
     }};
 }
 
+/// simple error creation using a format string.
 macro_rules! err {
     ($($arg:tt)*) => {{
         Err(format!($($arg)*).into())
@@ -26,27 +28,31 @@ macro_rules! err {
 
 
 
+/// An element representing something like a tag in html. It can have attributes and children. It also has a scope field for variable support.
 #[derive(Debug)]
 #[derive(Clone)]
 struct NiceElement {
     tag_name: String,
     attributes: Vec<(String, String)>,
     children: Vec<NiceThing>,
-    scope: Rc<RefCell<VarScope>>,  // TODO: do I need RefCell? I only want to change it when I insert it's parent. Maybe I can do that before I add it as child
+    scope: Rc<RefCell<NiceScope>>,
 }
 
+/// A simple string element
 #[derive(Debug)]
 #[derive(Clone)]
 struct NiceString {
     content: String,
 }
 
+/// A placeholder element for function arguments. It gets replaced when the function is called.
 #[derive(Debug)]
 #[derive(Clone)]
 struct NicePlaceholder {
     arg_name: String,
 }
 
+/// Either an element, string, or placeholder.
 #[derive(Debug)]
 #[derive(Clone)]
 enum NiceThing {
@@ -55,6 +61,7 @@ enum NiceThing {
     Placeholder(NicePlaceholder),
 }
 
+/// A variable element for use inside the scopes (i.e. in the variable hashmap stack)
 #[derive(Debug)]
 #[derive(Clone)]
 struct NiceVariable {
@@ -63,11 +70,12 @@ struct NiceVariable {
     body: NiceThing,
 }
 
+/// A scope for variables and arguments with a hash-map for lookup. Is connected with parent (upper level element) scopes, creating something like a stack.
 #[derive(Debug)]
 #[derive(Clone)]
-struct VarScope {
+struct NiceScope {
     scope: Option<HashMap<String, NiceVariable>>,
-    parent: Option<Rc<RefCell<VarScope>>>,
+    parent: Option<Rc<RefCell<NiceScope>>>,
 }
 
 impl NiceElement {
@@ -77,7 +85,7 @@ impl NiceElement {
             tag_name: "div".to_string(),
             attributes: vec![],
             children: vec![],
-            scope: Rc::new(RefCell::new(VarScope{scope: None, parent: None})),
+            scope: Rc::new(RefCell::new(NiceScope{scope: None, parent: None})),
         }
     }
 
@@ -118,7 +126,7 @@ impl NiceElement {
     }
 }
 
-impl VarScope {
+impl NiceScope {
     fn get_variable(&self, name: &str) -> Option<NiceVariable> {
         if let Some(scope) = &self.scope {
             if let Some(var) = scope.get(name) {
@@ -133,10 +141,12 @@ impl VarScope {
 }
 
 
+
 #[derive(Parser)]
 #[grammar = "src/grammar.pest"]
 struct NiceHTMLParser;
 
+/// Transpile NiceHTML to real HTML, with gets inserted into the DOM.
 #[wasm_bindgen]
 pub fn transpile(input: &str) -> Result<(), JsValue> {
     panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -231,7 +241,7 @@ fn process_element(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsVa
         tag_name: tag_name.to_string(),
         attributes: attributes,
         children: vec![],
-        scope: Rc::new(RefCell::new(VarScope{scope: None, parent: Some(stack.scope.clone())})),
+        scope: Rc::new(RefCell::new(NiceScope{scope: None, parent: Some(stack.scope.clone())})),
     };
 
     // process children
