@@ -1,13 +1,13 @@
-comment = _{ "#" ~ ANY* }
+comment = _{ "#" ~ (!"\n" ~ ANY)* }
 
-identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ ASCII_ALPHANUMERIC* }
+identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ (ASCII_ALPHANUMERIC | "_" )* }
 string = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 attribute = { identifier ~ "=" ~ string }
 element_name = { identifier ~ (" "+ ~ attribute*)?}
 element = { element_name ~ " "* ~ ("\n" ~ children)? }
 
-definition = { identifier ~ ("(" ~ identifier ~ ("," ~ identifier)* ~ ")")? ~ " "* ~ "=" ~ " "* ~ "\n" ~ children }
+definition = { identifier ~ ("(" ~ identifier ~ (" "* ~ "," ~ " "* ~ identifier)* ~ ")")? ~ " "* ~ "=" ~ " "* ~ "\n" ~ children }
 
 string_line = { string }
 

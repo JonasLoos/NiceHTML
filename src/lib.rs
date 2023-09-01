@@ -427,11 +427,13 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
         process_line(pair, &mut stack)?;
     }
 
+    // log
+    log!("{}", &stack_to_str(&stack)?);
+
+    // convert stack to html and append to body
     for elem in stack_to_html(&stack, &document)? {
         body.append_child(&elem)?;
     }
-
-    // TODO: convert stack to html and append to body
 
     Ok(())
 }
@@ -563,9 +565,9 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
     if let NiceThing::Element(ref mut var_body_elem) = &mut var_body {
         var_body_elem.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());  // TODO: check if correct
         var_body_elem.insert_arguments(&arg_names, args);
+        log!("inserted variable `{}({}) = {:?}[{}]`", var_name, arg_names.join(", "), var_body_elem.tag_name, stack_to_str(var_body_elem)?);
     }
 
-    log!("inserted variable `{}({})`", var_name, arg_names.join(", "));
 
     stack.append_child(var_body);
 
@@ -599,7 +601,8 @@ fn unwrap_string(string: Pair<Rule>) -> Result<&str, JsValue> {
     if string.as_rule() != Rule::string {
         return err!("expected string");
     }
-    Ok(string.as_str())
+    let str = string.as_str();
+    Ok(&str[1..str.len()-1])
 }
 
 fn stack_to_html(stack: &NiceElement, document: &Document) -> Result<Vec<Element>, JsValue> {
@@ -611,7 +614,10 @@ fn stack_to_html(stack: &NiceElement, document: &Document) -> Result<Vec<Element
                 for (name, value) in &element.attributes {
                     new_element.set_attribute(&name, &value)?;
                 }
-                stack_to_html(&element, document)?;
+                let children = stack_to_html(&element, document)?;
+                for child in children {
+                    new_element.append_child(&child)?;
+                }
                 result.push(new_element)
             },
             NiceThing::Str(string) => {
@@ -627,3 +633,34 @@ fn stack_to_html(stack: &NiceElement, document: &Document) -> Result<Vec<Element
 
     Ok(result)
 }
+
+fn stack_to_str(stack: &NiceElement) -> Result<String, JsValue> {
+    let mut result = String::new();
+    for child in &stack.children {
+        match child {
+            NiceThing::Element(element) => {
+                for (name, value) in &element.attributes {
+                    // ...
+                }
+                result.push_str(element.tag_name.as_str());
+                result.push_str("[");
+                result.push_str(stack_to_str(&element)?.as_str());
+                result.push_str("], ");
+            },
+            NiceThing::Str(string) => {
+                result.push_str("\"");
+                result.push_str(&string.content);
+                result.push_str("\"");
+                result.push_str(", ");
+            },
+            NiceThing::Placeholder(placeholder) => {
+                result.push_str("$");
+                result.push_str(placeholder.arg_name.as_str());
+                result.push_str(", ");
+            }
+        }
+    }
+
+    Ok(result)
+}
+
