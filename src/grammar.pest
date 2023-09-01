@@ -1,18 +1,19 @@
-comment = _{ "#" ~ (!"\n" ~ ANY)* }
+comment = _{ "#" ~ (!"\n" ~ ANY)* }  // line comment
+w = _{ " "* }  // whitespace
 
 identifier = { ('a'..'z' | 'A'..'Z' | "_") ~ (ASCII_ALPHANUMERIC | "_" )* }
 string = { "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
-attribute = { identifier ~ "=" ~ string }
+attribute = { identifier ~ w ~ "=" ~ w ~ string }
 element_name = { identifier ~ (" "+ ~ attribute*)?}
-element = { element_name ~ " "* ~ ("\n" ~ children)? }
+element = { element_name ~ w ~ ("\n" ~ children)? }
 
-definition = { identifier ~ ("(" ~ identifier ~ (" "* ~ "," ~ " "* ~ identifier)* ~ ")")? ~ " "* ~ "=" ~ " "* ~ "\n" ~ children }
+definition = { identifier ~ ("(" ~ w ~ identifier ~ (w ~ "," ~ w ~ identifier)* ~ w ~ ")")? ~ w ~ "=" ~ w ~ "\n" ~ children }
 
 string_line = { string }
 
 parameter = _{ string | variable }
-variable = { "$" ~ identifier ~ ("(" ~ " "* ~ parameter ~ (" "* ~ "," ~ " "* ~ parameter)* ~ " "* ~ ")")? }
+variable = { "$" ~ identifier ~ ("(" ~ w ~ parameter ~ (w ~ "," ~ w ~ parameter)* ~ w ~ ")")? }
 
 content = _{ definition | element | variable | string_line | comment | (" " | "\t")* }
 first_line = _{ content }
