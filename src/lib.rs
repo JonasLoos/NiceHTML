@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use pest::iterators::Pair;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
+use web_sys::Document;
+use web_sys::HtmlElement;
 use web_sys::Node;
 use web_sys::{window, console, Element};
 use std::collections::HashMap;
@@ -294,6 +296,7 @@ pub fn render(script: &str) -> Result<(), JsValue> {
 }
 
 
+#[derive(Debug)]
 #[derive(Clone)]
 struct NiceElement {
     tag_name: String,
@@ -302,17 +305,19 @@ struct NiceElement {
     scope: Rc<RefCell<VarScope>>,  // TODO: do I need RefCell? I only want to change it when I insert it's parent. Maybe I can do that before I add it as child
 }
 
+#[derive(Debug)]
 #[derive(Clone)]
 struct NiceString {
     content: String,
 }
 
+#[derive(Debug)]
 #[derive(Clone)]
 struct NicePlaceholder {
     arg_name: String,
 }
 
-
+#[derive(Debug)]
 #[derive(Clone)]
 enum NiceThing {
     Element(NiceElement),
@@ -320,6 +325,7 @@ enum NiceThing {
     Placeholder(NicePlaceholder),
 }
 
+#[derive(Debug)]
 #[derive(Clone)]
 struct NiceVariable {
     name: String,
@@ -327,6 +333,7 @@ struct NiceVariable {
     body: NiceThing,
 }
 
+#[derive(Debug)]
 #[derive(Clone)]
 struct VarScope {
     scope: Option<HashMap<String, NiceVariable>>,
@@ -415,14 +422,13 @@ pub fn transpile(input: &str) -> Result<(), JsValue> {
     let pairs = NiceHTMLParser::parse(Rule::root, &input).map_err(|err| err.to_string())?;
     let mut stack: NiceElement = NiceElement::new_empty();
 
-    // log pairs to console
-    // for pair in pairs.clone() {
-    //     console::log_1(&format!("{:?}", pair).into());
-    // }
-
     // process pairs
     for pair in pairs {
         process_line(pair, &mut stack)?;
+    }
+
+    for elem in stack_to_html(&stack, &document)? {
+        body.append_child(&elem)?;
     }
 
     // TODO: convert stack to html and append to body
@@ -530,6 +536,7 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
         for arg_name in variable.args.clone() {
             if let Some(arg_pair) = pair_inner.next() {
                 let mut arg_elem = NiceElement::new_empty();
+                arg_elem.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());
                 match arg_pair.as_rule() {
                     Rule::string => {
                         arg_elem.new_str(unwrap_string(arg_pair)?.to_string());
@@ -550,14 +557,15 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
     } else {
         // TODO: this also happens, if there is a variable wich is an argument to an other calling function
         // TODO: this might be solvable, if the scope of the calling function is prepended to the scope of the called function
-        return err!("variable `{}` not defined", var_name);
+        return err!("variable `{}` not defined. Current scope: `{:?}`", var_name, stack.scope.as_ref().borrow());
     }
 
     if let NiceThing::Element(ref mut var_body_elem) = &mut var_body {
+        var_body_elem.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());  // TODO: check if correct
         var_body_elem.insert_arguments(&arg_names, args);
     }
 
-    log!("inserted variable `{}` with args `({})`", var_name, arg_names.join(", "));
+    log!("inserted variable `{}({})`", var_name, arg_names.join(", "));
 
     stack.append_child(var_body);
 
@@ -592,4 +600,30 @@ fn unwrap_string(string: Pair<Rule>) -> Result<&str, JsValue> {
         return err!("expected string");
     }
     Ok(string.as_str())
+}
+
+fn stack_to_html(stack: &NiceElement, document: &Document) -> Result<Vec<Element>, JsValue> {
+    let mut result = vec![];
+    for child in &stack.children {
+        match child {
+            NiceThing::Element(element) => {
+                let new_element = document.create_element(&element.tag_name)?;
+                for (name, value) in &element.attributes {
+                    new_element.set_attribute(&name, &value)?;
+                }
+                stack_to_html(&element, document)?;
+                result.push(new_element)
+            },
+            NiceThing::Str(string) => {
+                let new_element = document.create_element("span")?;
+                new_element.set_inner_html(&string.content);
+                result.push(new_element);
+            },
+            NiceThing::Placeholder(_) => {
+                return err!("placeholder found in final stack");
+            }
+        }
+    }
+
+    Ok(result)
 }
