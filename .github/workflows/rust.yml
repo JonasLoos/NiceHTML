@@ -1,0 +1,38 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: jetli/wasm-pack-action@v0.4.0
+    - name: Build
+      run: |
+        cd nicehtml_transpiler
+        wasm-pack build --target web
+
+    - name: Configure Git
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+
+    - name: Create New Branch or Checkout Existing Branch
+      run: |
+        git checkout built
+
+    - name: Commit and Push Changes
+      run: |
+        git add -f pkg
+        git commit -m "Deploying build results to new branch"
+        git push origin built
