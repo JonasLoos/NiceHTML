@@ -15,11 +15,12 @@ element = { element_name ~ w ~ ("\n" ~ children)? }
 definition = { identifier ~ ("(" ~ w ~ identifier ~ (w ~ "," ~ w ~ identifier)* ~ w ~ ")")? ~ w ~ "=" ~ w ~ "\n" ~ children }
 
 string_line = { string }
+multiline_string = { "\"\"\"" ~ (!"\"\"\"" ~ ANY)* ~ "\"\"\"" }
 
 parameter = _{ string | variable }
 variable = { "$" ~ identifier ~ ("(" ~ w ~ parameter ~ (w ~ "," ~ w ~ parameter)* ~ w ~ ")")? }
 
-content = _{ definition | element | variable | string_line | comment | (" " | "\t")* }
+content = _{ definition | element | variable | multiline_string | string_line | comment | (" " | "\t")* }
 first_line = _{ content }
 later_line = _{  PEEK_ALL ~ content }
 lines = _{ first_line ~ ("\n" ~ later_line)* }

@@ -177,6 +177,7 @@ fn process_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue
         Rule::definition => {process_definition(pair, stack)?; None},
         Rule::element => Some(process_element(pair, stack)?),
         Rule::variable => Some(process_variable(pair, stack)?),
+        Rule::multiline_string => Some(process_string_multiline(pair, stack)?),
         Rule::string_line => Some(process_string_line(pair, stack)?),
         Rule::EOI => None,
         idk => return err!("invalid child: {:?}", idk)
@@ -336,6 +337,32 @@ fn process_string_line(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), 
     let mut pair_inner = pair.into_inner();
     let string = unwrap_string(pair_inner.next().unwrap())?;
     stack.new_str(string.to_string());
+    Ok(())
+}
+
+fn process_string_multiline(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsValue> {
+    // process multi line string
+    let string_full = pair.as_str();
+    let string = &string_full[3..string_full.len()-3];
+
+    // remove starting and ending empty lines if they exist
+    let mut string_lines = string.split("\n").collect::<Vec<&str>>();
+    if string_lines[0].trim().is_empty() {
+        string_lines.remove(0);
+    }
+    if string_lines[string_lines.len()-1].trim().is_empty() {
+        string_lines.remove(string_lines.len()-1);
+    }
+
+    // remove indentation
+    let min_indentation = string_lines.iter().filter(|x| !x.trim().is_empty()).map(|x| x.chars().take_while(|y| y.is_whitespace()).count()).min().unwrap();
+    for line in &mut string_lines {
+        *line = &line[min_indentation..];
+    }
+
+    // insert string into stack
+    let result_string = string_lines.join("\n");
+    stack.new_str(result_string.to_string());
     Ok(())
 }
 
