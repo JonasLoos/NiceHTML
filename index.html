@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0"/>
+    <title>My Compiler</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+</head>
+
+<body>
+<script type="module" src="nicehtml.js"></script>
+<!-- <script type="text/nicehtml" src="test.nicehtml"></script> -->
+<script type="text/nicehtml">
+
+nav #nav .navbar .navbar-menu .is-active
+    div .navbar-brand
+        h1 .title .navbar-item
+            "NiceHTML"
+    a .navbar-item href="#"
+        "Home"
+    a .navbar-item href="#overview"
+        "Overview"
+    a .navbar-item href="#transpilation"
+        "Transpilation"
+    a .navbar-item href="#example"
+        "Example"
+    div .navbar-item .is-right
+        a href="https://github.com/JonasLoos/NiceHTML" target="_blank"
+            "Github"
+
+div .hero .is-primary .is-bold .pt-2 .pb-2
+    div .mt-1 .tile .is-horizontal .is-parent
+        div .tile .is-child
+        div .tile .is-child
+            pre style="background-color: #00000036; color: white;"
+                code
+                    """
+                    div .section
+                        h1 .title
+                            "NiceHTML"
+                        p
+                            "like HTML but nicer!"
+                    """
+        div .tile .is-child
+
+
+div .section .container .is-max-desktop
+    h2 .title #overview
+        "Overview"
+    p
+        """
+        NiceHTML is a language designed for building web pages, very similar to html, but with a cleaner and more intuitive syntax.
+        It allows the creation of HTML structures using a more readable and maintainable code, improving the developer experience.
+        """
+    p
+        "As NiceHTML is a small project in it's early stages, it is not recommended to use it in production."
+        "It should be seen more as a technology demonstration than enything else."
+
+div .section .container .is-max-desktop
+    h2 .title #transpilation
+        "Transpilation"
+    p
+        "The NiceHTML code is transpiled to HTML using a transpiler built with Rust and WebAssembly (Wasm). Rust is a systems programming language focused on safety, speed, and concurrency, and WebAssembly is a binary instruction format for a stack-based virtual machine. This combination ensures a fast and efficient transpilation process."
+
+div .section .container .is-max-desktop
+    h2 .title #example
+        "Example"
+    p
+        "Below is an example of NiceHTML code:"
+    pre
+        code
+            """
+            card(title, content) =
+                # this creates a card with title and content
+                div .card
+                    h3 .card-header
+                        $title
+                    div .card-content
+                        $content
+            
+            div .section
+                $card("Card 1", "This is the content of card 1")
+                $card("Card 2", "This is the content of card 2")
+            """
+    p .mt-4
+        "Another example can also just look at the source code of this website (press `ctrl+u` in most browsers to view the source code)"
+
+div .section .container .is-max-desktop
+    h2 .title
+        "Styling"
+    p
+        "NiceHTML doesn't prove any styling options by itself. "
+        "However, to style the webpage, any CSS (framework) can be used. For example, this website uses the "
+        a href="https://bulma.io/"
+            "Bulma "
+        "CSS framework."
+
+div #footer .footer
+    "This is the footer"
+
+</script>
+</body>
+</html>

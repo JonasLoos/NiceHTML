@@ -1,0 +1,46 @@
+# this is a comment
+
+card(title, content) =
+    # this creates a card with title and content
+    div class="card"
+        h3 class="card-title"
+            $title
+        div class="card-content"
+            $content
+
+card_i(i) =
+    title =
+        span
+            "Card "
+            $i
+    content =
+        p
+            "This is card number "
+            $i
+    $card($i, $content)
+
+h1
+    "My Compiler Test"
+div #nav .class-1 .class-2
+    a href="#"
+        "Home"
+    a href="#cards"
+        "Cards"
+    a href="#description"
+        "Description"
+h2 id="cards"
+    "Cards"
+div #cards class="container"
+    $card("asdf-card-title", "asdffdsaasdf-card-content")
+    $card_i("1")
+    $card_i("2")
+    $card_i("42")
+
+div class="container"
+    h2 #description
+        "Description"
+    p
+        "This is just a test for a nicer html."
+
+div
+    "This is the footer"
