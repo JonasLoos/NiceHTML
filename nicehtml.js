@@ -1,4 +1,4 @@
-import * as wasm from './nicehtml_transpiler/pkg/web_compiler.js';
+import * as wasm from './nicehtml_transpiler/pkg/nicehtml_transpiler.js';
 // Start loading the WASM module
 const wasmPromise = wasm.default();
 
