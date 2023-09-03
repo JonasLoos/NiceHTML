@@ -33,6 +33,6 @@ jobs:
 
     - name: Commit and Push Changes
       run: |
-        git add -f pkg
+        git add -f nicehtml_transpiler/pkg
         git commit -m "Deploying build results to new branch"
         git push origin built
