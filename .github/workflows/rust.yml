@@ -35,4 +35,4 @@ jobs:
       run: |
         git add -f nicehtml_transpiler/pkg
         git commit -m "Deploying build results to new branch"
-        git push origin built
+        git push -u origin built
