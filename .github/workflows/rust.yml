@@ -16,9 +16,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-      with:
-          token: ${{ secrets.GITHUB_TOKEN }}
     - uses: jetli/wasm-pack-action@v0.4.0
+
+    - name: checkout "built" branch with content of "main"
+      run: |
+        git checkout -b built || git checkout built
+        git reset --hard origin/main
+
     - name: Build
       run: |
         cd nicehtml_transpiler
@@ -29,12 +33,10 @@ jobs:
         git config user.name "GitHub Actions"
         git config user.email "actions@github.com"
 
-    - name: Create New Branch or Checkout Existing Branch
-      run: |
-        git checkout -b built || git checkout built
-
     - name: Commit and Push Changes
       run: |
         git add -f nicehtml_transpiler/pkg
         git commit -m "Deploying build results to new branch"
-        git push -u origin built
+        git push origin built
+      with:
+          token: ${{ secrets.GITHUB_TOKEN }}
