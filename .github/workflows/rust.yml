@@ -19,6 +19,7 @@ jobs:
       run: |
         git fetch
         git checkout built
+        git pull
         git reset --hard origin/main
 
     - uses: jetli/wasm-pack-action@v0.4.0
