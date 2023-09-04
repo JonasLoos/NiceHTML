@@ -17,6 +17,7 @@ jobs:
 
     - name: checkout "built" branch with content of "main"
       run: |
+        git fetch
         git checkout -b built || git checkout built
         git branch --set-upstream-to=origin/built built
         git pull
