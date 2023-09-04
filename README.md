@@ -6,6 +6,11 @@ It also has support for variables and simple functions.
 The transpiler is written in rust and called using wasm to transpile nicehtml code to html and insert it into the DOM.
 
 
+## Usage
+
+TODO
+
+
 ## Example
 
 very simple example:
