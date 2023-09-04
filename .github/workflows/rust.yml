@@ -16,6 +16,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+      with:
+          token: ${{ secrets.GITHUB_TOKEN }}
     - uses: jetli/wasm-pack-action@v0.4.0
 
     - name: checkout "built" branch with content of "main"
