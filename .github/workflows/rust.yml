@@ -36,3 +36,5 @@ jobs:
         git add -f nicehtml_transpiler/pkg
         git commit -m "Deploying build results to new branch"
         git push origin built
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
