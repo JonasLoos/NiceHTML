@@ -39,4 +39,4 @@ jobs:
         git commit -m "Deploying build results to new branch"
         git push origin built
       with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
