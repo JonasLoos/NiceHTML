@@ -28,6 +28,7 @@ nav #nav .navbar .navbar-menu .is-active
         a href="https://github.com/JonasLoos/NiceHTML" target="_blank"
             "Github"
 
+
 div .hero .is-primary .is-bold .pt-2 .pb-2
     div .mt-1 .tile .is-horizontal .is-parent
         div .tile .is-child
@@ -56,11 +57,47 @@ div .section .container .is-max-desktop
         "As NiceHTML is a small project in it's early stages, it is not recommended to use it in production."
         "It should be seen more as a technology demonstration than enything else."
 
+
 div .section .container .is-max-desktop
     h2 .title #transpilation
         "Transpilation"
     p
         "The NiceHTML code is transpiled to HTML using a transpiler built with Rust and WebAssembly (Wasm). Rust is a systems programming language focused on safety, speed, and concurrency, and WebAssembly is a binary instruction format for a stack-based virtual machine. This combination ensures a fast and efficient transpilation process."
+
+
+div .section .container .is-max-desktop
+    h2 .title #Usage
+        "Usage"
+    p
+        "Add this line to your HTML file:"
+    pre
+        code
+            """
+            &lt;script type="module" src="https://cdn.jsdelivr.net/gh/JonasLoos/NiceHTML@built/nicehtml"&gt;&lt;/script&gt;
+            """
+    p .mt-4
+        """
+        Then you can write NiceHTML inside script tags with a `type="text/nicehtml"` attribute:
+        """
+    pre
+        code
+            """&lt;script type="text/nicehtml"&gt;...&lt;/script&gt;"""
+    p .mt-4
+        b
+            "Using a fixed version"
+    p
+        "If you want to do more than just testing NiceHTML, it's probably better to fix the version you are using. E.g.:"
+    pre
+        code
+            """
+            &lt;script type="module" src="https://cdn.jsdelivr.net/gh/JonasLoos/NiceHTML@0.1.1/nicehtml"&gt;&lt;/script&gt;
+            """
+    p .mt-4
+        "You can find all available versions as releases on "
+        a href="https://github.com/JonasLoos/NiceHTML/releases" target="_blank"
+            "Github"
+        "."
+
 
 div .section .container .is-max-desktop
     h2 .title #example
@@ -85,6 +122,7 @@ div .section .container .is-max-desktop
     p .mt-4
         "Another example is the source code of this website (press `ctrl+u` in most browsers to view it)."
 
+
 div .section .container .is-max-desktop
     h2 .title
         "Styling"
@@ -94,6 +132,7 @@ div .section .container .is-max-desktop
         a href="https://bulma.io/"
             "Bulma "
         "CSS framework."
+
 
 div #footer .footer
     # TODO
