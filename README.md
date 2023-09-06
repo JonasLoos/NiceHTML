@@ -22,6 +22,14 @@ Then you can write NiceHTML inside script tags with a `type="text/nicehtml"` att
 
 You can look at [index.html](index.html) for an example.
 
+### Using a fixed version
+
+If you want to do more than just testing NiceHTML, it's probably better to fix the version you are using. E.g.:
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/gh/JonasLoos/NiceHTML@v0.1.1/nicehtml.js"></script>
+```
+
 
 ## Example
 
