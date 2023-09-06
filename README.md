@@ -8,12 +8,24 @@ The transpiler is written in rust and called using wasm to transpile nicehtml co
 
 ## Usage
 
-TODO
+Add this line to your HTML file:
+
+```html
+<script type="module" src="https://cdn.jsdelivr.net/gh/JonasLoos/NiceHTML@built/nicehtml.js"></script>
+```
+
+Then you can write NiceHTML inside script tags with a `type="text/nicehtml"` attribute:
+
+```html
+<script type="text/nicehtml">...</script>
+```
+
+You can look at [index.html](index.html) for an example.
 
 
 ## Example
 
-very simple example:
+A very simple NiceHTML example:
 
 ```
 div .section
