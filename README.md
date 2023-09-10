@@ -53,6 +53,7 @@ transpiles to:
     <p>
         like HTML but nicer!
     </p>
+</div>
 ```
 
 A more complex example, using functions:
