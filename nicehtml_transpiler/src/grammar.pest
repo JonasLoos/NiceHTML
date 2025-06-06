@@ -22,7 +22,7 @@ variable = { "$" ~ identifier ~ ("(" ~ w ~ parameter ~ (w ~ "," ~ w ~ parameter)
 
 content = _{ definition | element | variable | multiline_string | string_line | comment | (" " | "\t")* }
 first_line = _{ content }
-empty_line = _{ !(!("\n") ~ ANY) }
+empty_line = _{ (" " | "\t")* }
 later_line = _{  PEEK_ALL ~ content | empty_line }
 lines = _{ first_line ~ ("\n" ~ later_line)* }
 
