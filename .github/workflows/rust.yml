@@ -30,6 +30,7 @@ jobs:
       run: |
         cd nicehtml_transpiler
         wasm-pack build --target web --release
+        cd ..
 
     - name: Checkout built branch
       run: |
