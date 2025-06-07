@@ -10,9 +10,9 @@ class_attribute = { "." ~ identifier }
 base_attribute = { identifier ~ w ~ "=" ~ w ~ string }
 attribute = { id_attribute | class_attribute | base_attribute }
 element_name = { identifier ~ (" "+ ~ attribute*)*}
-element = { element_name ~ w ~ ("\n" ~ children)? }
+element = { element_name ~ w ~ children? }
 
-definition = { identifier ~ ("(" ~ w ~ identifier ~ (w ~ "," ~ w ~ identifier)* ~ w ~ ")")? ~ w ~ "=" ~ w ~ "\n" ~ children }
+definition = { identifier ~ ("(" ~ w ~ identifier ~ (w ~ "," ~ w ~ identifier)* ~ w ~ ")")? ~ w ~ "=" ~ w ~ children }
 
 string_line = { string }
 multiline_string = { "\"\"\"" ~ (!"\"\"\"" ~ ANY)* ~ "\"\"\"" }
@@ -23,9 +23,9 @@ variable = { "$" ~ identifier ~ ("(" ~ w ~ parameter ~ (w ~ "," ~ w ~ parameter)
 content = _{ definition | element | variable | multiline_string | string_line | comment | (" " | "\t")* }
 first_line = _{ content }
 later_line = _{  PEEK_ALL ~ content }
-lines = _{ first_line ~ ((" " | "\t" | "\n")* ~ "\n" ~ later_line)* }
+lines = _{ first_line ~ ("\n" ~ later_line)* }
 
 indentation = _{ (" " | "\t")+ }
-children = { PEEK_ALL ~ PUSH(indentation) ~ lines ~ DROP }
+children = { "\n" ~ PEEK_ALL ~ PUSH(indentation) ~ lines ~ DROP }
 
 root = _{ lines ~ EOI }
