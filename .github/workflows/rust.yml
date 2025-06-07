@@ -26,16 +26,16 @@ jobs:
       run: |
         curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
+    - name: Checkout built branch
+      run: |
+        git checkout built || git checkout -b built
+        git reset --hard origin/main
+
     - name: Build WASM (Release)
       run: |
         cd nicehtml_transpiler
         wasm-pack build --target web --release
         cd ..
-
-    - name: Checkout built branch
-      run: |
-        git checkout built || git checkout -b built
-        git reset --hard origin/main
 
     - name: Configure Git
       run: |
