@@ -15,6 +15,7 @@ use pest_derive::Parser;
 /// simple logging using a format string.
 macro_rules! log {
     ($($arg:tt)*) => {{
+        #[cfg(debug_assertions)]
         console::log_1(&format!($($arg)*).into());
     }};
 }
@@ -320,7 +321,7 @@ fn process_variable(pair: Pair<Rule>, stack: &mut NiceElement) -> Result<(), JsV
         return err!("variable `{}` not defined. Current scope: `{:?}`", var_name, stack.scope.as_ref().borrow());
     }
 
-    if let NiceThing::Element(ref mut var_body_elem) = &mut var_body {
+    if let NiceThing::Element(var_body_elem) = &mut var_body {
         var_body_elem.scope.as_ref().borrow_mut().parent = Some(stack.scope.clone());  // TODO: check if correct
         var_body_elem.insert_arguments(&arg_names, args);
         log!("inserted variable `{}({}) = {:?}[{}]`", var_name, arg_names.join(", "), var_body_elem.tag_name, stack_to_str(var_body_elem)?);

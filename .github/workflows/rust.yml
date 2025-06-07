@@ -14,19 +14,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
-    - name: checkout "built" branch with content of "main"
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - name: Install wasm-pack
       run: |
-        git fetch
-        git checkout built
-        git pull
-        git reset --hard origin/main
+        curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-    - uses: jetli/wasm-pack-action@v0.4.0
-    - name: Build
+    - name: Build WASM (Release)
       run: |
         cd nicehtml_transpiler
-        wasm-pack build --target web
+        wasm-pack build --target web --release
+
+    - name: Checkout built branch
+      run: |
+        git checkout built || git checkout -b built
+        git reset --hard origin/main
 
     - name: Configure Git
       run: |
@@ -36,7 +44,5 @@ jobs:
     - name: Commit and Push Changes
       run: |
         git add -f nicehtml_transpiler/pkg
-        git commit -m "Deploying build results to new branch"
+        git commit -m "Deploy release build to built branch" || exit 0
         git push -f origin built
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
