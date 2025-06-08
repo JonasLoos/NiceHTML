@@ -1,0 +1,15 @@
+{
+  "name": "nicehtml_transpiler",
+  "type": "module",
+  "version": "0.1.2",
+  "files": [
+    "nicehtml_transpiler_bg.wasm",
+    "nicehtml_transpiler.js",
+    "nicehtml_transpiler.d.ts"
+  ],
+  "main": "nicehtml_transpiler.js",
+  "types": "nicehtml_transpiler.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
